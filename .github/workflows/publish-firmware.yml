@@ -59,12 +59,25 @@ jobs:
             "--nanopb_out=-S.cpp -v:../src/mesh/generated/" \
             -I=. meshtastic/*.proto
 
+      - name: Install PlatformIO
+        run: pip install platformio
+
       - name: Build RAK4631
-        uses: meshtastic/gh-action-firmware@main
-        with:
-          pio_platform: nrf52840
-          pio_env: rak4631
-          pio_target: build
+        env:
+          APP_VERSION: ${{ needs.version.outputs.long }}
+        run: |
+          VERSION=${{ needs.version.outputs.long }}
+          pio run --environment rak4631 --target mtjson
+          BUILDDIR=.pio/build/rak4631
+          mkdir -p release
+          rm -f release/firmware*
+          cp $BUILDDIR/firmware-rak4631-${VERSION}.uf2 release/
+          cp $BUILDDIR/firmware-rak4631-${VERSION}.elf release/
+          cp $BUILDDIR/firmware-rak4631-${VERSION}.hex release/
+          cp $BUILDDIR/firmware-rak4631-${VERSION}.zip release/
+          cp $BUILDDIR/firmware-rak4631-${VERSION}.mt.json release/
+          cp src/mesh/generated/meshtastic/*.pb.cpp release/ 2>/dev/null || true
+          echo "Built: $(ls release/*.uf2 2>/dev/null)"
 
       - name: Display build artifacts
         run: ls -la release/
