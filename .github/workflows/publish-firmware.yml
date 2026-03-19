@@ -189,6 +189,8 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
+        with:
+          repository: baymesh/bayme.sh-firmware-pages
 
       - name: Publish to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
