@@ -30,9 +30,6 @@ PB_BIND(meshtastic_StoreForwardPlusPlus, meshtastic_StoreForwardPlusPlus, 2)
 PB_BIND(meshtastic_Waypoint, meshtastic_Waypoint, AUTO)
 
 
-PB_BIND(meshtastic_StatusMessage, meshtastic_StatusMessage, AUTO)
-
-
 PB_BIND(meshtastic_MqttClientProxyMessage, meshtastic_MqttClientProxyMessage, 2)
 
 
