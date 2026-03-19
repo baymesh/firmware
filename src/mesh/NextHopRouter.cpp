@@ -1,5 +1,4 @@
 #include "NextHopRouter.h"
-#include "Default.h"
 #include "MeshTypes.h"
 #include "meshUtils.h"
 #if !MESHTASTIC_EXCLUDE_TRACEROUTE
@@ -24,10 +23,10 @@ PendingPacket::PendingPacket(meshtastic_MeshPacket *p, uint8_t numRetransmission
 ErrorCode NextHopRouter::send(meshtastic_MeshPacket *p)
 {
     // Add any messages _we_ send to the seen message list (so we will ignore all retransmissions we see)
-    p->relay_node = getNodeNum(); // First set the relayer to us (full node ID)
-    wasSeenRecently(p);           // FIXME, move this to a sniffSent method
+    p->relay_node = nodeDB->getLastByteOfNodeNum(getNodeNum()); // First set the relayer to us
+    wasSeenRecently(p);                                         // FIXME, move this to a sniffSent method
 
-    p->next_hop = getNextHop(p->to, p->relay_node); // set the next hop
+    p->next_hop = getNextHop(p->to, p->relay_node).value_or(NO_NEXT_HOP_PREFERENCE); // set the next hop
     LOG_DEBUG("Setting next hop for packet with dest %x to %x", p->to, p->next_hop);
 
     // If it's from us, ReliableRouter already handles retransmissions if want_ack is set. If a next hop is set and hop limit is
@@ -90,6 +89,7 @@ bool NextHopRouter::shouldFilterReceived(const meshtastic_MeshPacket *p)
 void NextHopRouter::sniffReceived(const meshtastic_MeshPacket *p, const meshtastic_Routing *c)
 {
     NodeNum ourNodeNum = getNodeNum();
+    uint8_t ourRelayID = nodeDB->getLastByteOfNodeNum(ourNodeNum);
     bool isAckorReply = (p->which_payload_variant == meshtastic_MeshPacket_decoded_tag) &&
                         (p->decoded.request_id != 0 || p->decoded.reply_id != 0);
     if (isAckorReply) {
@@ -103,7 +103,7 @@ void NextHopRouter::sniffReceived(const meshtastic_MeshPacket *p, const meshtast
                 // directly from the destination
                 bool wasAlreadyRelayer = wasRelayer(p->relay_node, p->decoded.request_id, p->to);
                 bool weWereSoleRelayer = false;
-                bool weWereRelayer = wasRelayer(ourNodeNum, p->decoded.request_id, p->to, &weWereSoleRelayer);
+                bool weWereRelayer = wasRelayer(ourRelayID, p->decoded.request_id, p->to, &weWereSoleRelayer);
                 if ((weWereRelayer && wasAlreadyRelayer) || (getHopsAway(*p) == 0 && weWereSoleRelayer)) {
                     if (origTx->next_hop != p->relay_node) { // Not already set
                         LOG_INFO("Update next hop of 0x%x to 0x%x based on ACK/reply (was relayer %d we were sole %d)", p->from,
@@ -138,23 +138,18 @@ bool NextHopRouter::perhapsRebroadcast(const meshtastic_MeshPacket *p)
 #endif
 
     // Allow rebroadcast if hop_limit > 0 OR if we're exhausting hops (which sets hop_limit = 0 but still needs one relay)
-    // Also check relay_node: if set, only the designated node should rebroadcast
     if (!isToUs(p) && !isFromUs(p) && (p->hop_limit > 0 || exhaustHops)) {
-        // Check if this packet has a designated relay_node
-        if (p->relay_node != 0 && p->relay_node != getNodeNum()) {
-            // Packet has a relay_node but it's not us - don't rebroadcast
-            LOG_DEBUG("Not rebroadcasting: relay_node=0x%x is not us (0x%x)", p->relay_node, getNodeNum());
-            return false;
-        }
         if (p->id != 0) {
             if (isRebroadcaster()) {
-                if (p->next_hop == NO_NEXT_HOP_PREFERENCE || p->next_hop == getNodeNum()) {
-                    meshtastic_MeshPacket *tosend = packetPool.allocCopy(*p); // keep a copy because we will be sending it
-                    if (p->relay_node == getNodeNum()) {
-                        LOG_INFO("Rebroadcasting as designated relay_node for message from %x", getFrom(p));
-                    } else {
-                        LOG_INFO("Rebroadcast received message coming from %x", p->relay_node);
+                if (p->next_hop == NO_NEXT_HOP_PREFERENCE || p->next_hop == nodeDB->getLastByteOfNodeNum(getNodeNum())) {
+                    // Check if this packet has a designated relay_node
+                    if (p->relay_node != 0 && p->relay_node != nodeDB->getLastByteOfNodeNum(getNodeNum())) {
+                        // Packet has a relay_node but it's not us - don't rebroadcast
+                        LOG_DEBUG("Not rebroadcasting: relay_node=0x%x is not us (0x%x)", p->relay_node, nodeDB->getLastByteOfNodeNum(getNodeNum()));
+                        return false;
                     }
+                    meshtastic_MeshPacket *tosend = packetPool.allocCopy(*p); // keep a copy because we will be sending it
+                    LOG_INFO("Rebroadcast received message coming from %x", p->relay_node);
 
                     // If exhausting hops, force hop_limit = 0 regardless of other logic
                     if (exhaustHops) {
@@ -164,24 +159,8 @@ bool NextHopRouter::perhapsRebroadcast(const meshtastic_MeshPacket *p)
                         // Use shared logic to determine if hop_limit should be decremented
                         tosend->hop_limit--; // bump down the hop count
                     } else {
-                        LOG_INFO("favorite-ROUTER rebroadcast: preserving hop_limit");
+                        LOG_INFO("favorite-ROUTER/CLIENT_BASE-to-ROUTER/CLIENT_BASE rebroadcast: preserving hop_limit");
                     }
-
-                    // Scale down broadcast (non-directed) packet hop_limit to our configured broadcast hop limit
-                    if (isBroadcast(p->to)) {
-                        uint8_t bcastLimit =
-                            Default::getConfiguredOrDefaultBroadcastHopLimit(config.lora.broadcast_hop_limit);
-                        if (tosend->hop_limit > bcastLimit) {
-                            // Adjust hop_start proportionally to preserve hops-away calculation
-                            if (tosend->hop_start > tosend->hop_limit - bcastLimit)
-                                tosend->hop_start -= (tosend->hop_limit - bcastLimit);
-                            else
-                                tosend->hop_start = 0;
-                            tosend->hop_limit = bcastLimit;
-                            LOG_DEBUG("Scaled broadcast hop_limit down to %d for 0x%08x", bcastLimit, getFrom(p));
-                        }
-                    }
-
 #if USERPREFS_EVENT_MODE
                     if (tosend->hop_limit > 2) {
                         // if we are "correcting" the hop_limit, "correct" the hop_start by the same amount to preserve hops away.
@@ -199,7 +178,7 @@ bool NextHopRouter::perhapsRebroadcast(const meshtastic_MeshPacket *p)
                     return true;
                 }
             } else {
-                LOG_DEBUG("No rebroadcast: Rebroadcast Mode = NONE");
+                LOG_DEBUG("No rebroadcast: Role = CLIENT_MUTE or Rebroadcast Mode = NONE");
             }
         } else {
             LOG_DEBUG("Ignore 0 id broadcast");
@@ -213,10 +192,10 @@ bool NextHopRouter::perhapsRebroadcast(const meshtastic_MeshPacket *p)
  * Get the next hop for a destination, given the relay node
  * @return the node number of the next hop, 0 if no preference (fallback to FloodingRouter)
  */
-NodeNum NextHopRouter::getNextHop(NodeNum to, NodeNum relay_node)
+std::optional<uint8_t> NextHopRouter::getNextHop(NodeNum to, uint8_t relay_node)
 {
     if (isBroadcast(to))
-        return NO_NEXT_HOP_PREFERENCE;
+        return std::nullopt;
 
     meshtastic_NodeInfoLite *node = nodeDB->getMeshNode(to);
     if (node && node->next_hop) {
@@ -227,7 +206,7 @@ NodeNum NextHopRouter::getNextHop(NodeNum to, NodeNum relay_node)
         } else
             LOG_WARN("Next hop for 0x%x is 0x%x, same as relayer; set no pref", to, node->next_hop);
     }
-    return NO_NEXT_HOP_PREFERENCE;
+    return std::nullopt;
 }
 
 PendingPacket *NextHopRouter::findPendingPacket(GlobalPacketId key)
@@ -252,7 +231,7 @@ bool NextHopRouter::roleAllowsCancelingFromTxQueue(const meshtastic_MeshPacket *
 {
     // Return true if we're allowed to cancel a packet in the txQueue (so we may never transmit it even once)
 
-    // Return false for ROUTER role which should always transmit the packet at least once.
+    // Return false for roles like ROUTER, ROUTER_LATE which should always transmit the packet at least once.
 
     return roleAllowsCancelingDupe(p); // same logic as FloodingRouter::roleAllowsCancelingDupe
 }
@@ -330,21 +309,6 @@ int32_t NextHopRouter::doRetransmissions()
                 stopRetransmission(it->first);
                 stillValid = false; // just deleted it
             } else {
-                // Escalate coding rate on each retransmit: initial send uses configured CR (e.g. 4/5),
-                // retransmit 1 -> 4/6, retransmit 2 -> 4/7, retransmit 3+ -> 4/8.
-                // LoRa explicit-header mode embeds the CR in every packet, so receivers auto-detect it.
-                ++p.retransmitAttempt;
-                if (iface) {
-                    uint8_t baseCr = iface->getBaseCr();
-                    uint8_t escalatedCr = baseCr + p.retransmitAttempt;
-                    if (escalatedCr > 8)
-                        escalatedCr = 8;
-                    if (escalatedCr != baseCr) {
-                        LOG_DEBUG("CR escalation: attempt %u, CR 4/%u -> 4/%u", p.retransmitAttempt, baseCr, escalatedCr);
-                        iface->setNextTxCodingRate(escalatedCr);
-                    }
-                }
-
                 LOG_DEBUG("Sending retransmission fr=0x%x,to=0x%x,id=0x%x, tries left=%d", p.packet->from, p.packet->to,
                           p.packet->id, p.numRetransmissions);
 
