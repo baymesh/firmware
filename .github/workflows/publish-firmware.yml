@@ -1,0 +1,165 @@
+name: Publish Firmware
+
+on:
+  push:
+    branches:
+      - develop
+      - master
+  workflow_dispatch:
+    inputs:
+      force_refresh:
+        description: 'Force refresh dependencies'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: publish-firmware
+  cancel-in-progress: false
+
+env:
+  FIRMWARE_VERSION: '2.7.21'
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      long: ${{ steps.version.outputs.long }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Get release version string
+        run: |
+          echo "long=$(./bin/buildinfo.py long)" >> $GITHUB_OUTPUT
+        id: version
+        env:
+          BUILD_LOCATION: local
+
+  build-rak4631:
+    runs-on: ubuntu-latest
+    needs: version
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Build RAK4631
+        uses: meshtastic/gh-action-firmware@main
+        with:
+          pio_platform: nrf52840
+          pio_env: rak4631
+          pio_target: build
+
+      - name: Display build artifacts
+        run: ls -la release/
+
+      - name: Job summary
+        run: |
+          echo "## RAK4631 Build" >> $GITHUB_STEP_SUMMARY
+          echo "Version: ${{ needs.version.outputs.long }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          ls release/*.uf2 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Store artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: firmware-rak4631-${{ needs.version.outputs.long }}
+          overwrite: true
+          path: |
+            release/*.mt.json
+            release/*.uf2
+            release/*.hex
+            release/*.elf
+            release/*.zip
+            release/firmware-rak4631-*.json
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [version, build-rak4631]
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.status_page }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: ./publish
+          pattern: firmware-rak4631-*
+
+      - name: Display artifacts
+        run: ls -la publish/
+
+      - name: Create release manifest
+        run: |
+          cd publish
+          VERSION="${{ needs.version.outputs.long }}"
+          
+          cat > firmware-${VERSION}.json << 'EOF'
+          {
+            "version": "%VERSION%",
+            "build_date": "%DATE%",
+            "targets": [
+              {
+                "board": "rak4631",
+                "firmware": "%RAK_UF2%"
+              }
+            ]
+          }
+          EOF
+          
+          RAK_UF2=$(ls *.uf2 2>/dev/null | grep rak4631 | head -1)
+          sed -i "s/%VERSION%/$VERSION/g; s/%DATE%/$(date -u +%Y-%m-%dT%H:%M:%SZ)/g; s/%RAK_UF2%/$RAK_UF2/g" firmware-${VERSION}.json
+          cat firmware-${VERSION}.json
+
+      - name: Create release notes
+        run: |
+          cd publish
+          cat > release_notes.md << 'EOF'
+          # Baymesh Firmware
+
+          ## Features
+
+          ### MeshControl (Port 78)
+          Remote configuration via signed HMAC packets.
+
+          ### Relay Node
+          - Broadcast relay_node: Specify which node rebroadcasts first
+          - DM relay_node preference
+
+          ### Hop Limit
+          - HOP_MAX = 64
+
+          ## Supported Hardware
+
+          - RAK WisBlock 4631
+          EOF
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Publish to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          deploy_key: ${{ secrets.FIRMWARE_PAGES_DEPLOY_KEY }}
+          external_repository: baymesh/bayme.sh-firmware-pages
+          publish_branch: gh-pages
+          publish_dir: ./publish
+          keep_files: true
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
+          commit_message: "Publish firmware ${{ needs.version.outputs.long }}"
+          enable_jekyll: false
