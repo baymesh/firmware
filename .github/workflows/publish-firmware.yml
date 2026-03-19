@@ -5,6 +5,7 @@ on:
     branches:
       - develop
       - master
+      - baymesh-refactor
   workflow_dispatch:
     inputs:
       force_refresh:
