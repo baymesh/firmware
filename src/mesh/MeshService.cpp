@@ -87,9 +87,7 @@ int MeshService::handleFromRadio(const meshtastic_MeshPacket *mp)
     powerFSM.trigger(EVENT_PACKET_FOR_PHONE); // Possibly keep the node from sleeping
 
     nodeDB->updateFrom(*mp); // update our DB state based off sniffing every RX packet from the radio
-    bool isPreferredRebroadcaster =
-        IS_ONE_OF(config.device.role, meshtastic_Config_DeviceConfig_Role_ROUTER, meshtastic_Config_DeviceConfig_Role_ROUTER_LATE,
-                  meshtastic_Config_DeviceConfig_Role_CLIENT_BASE);
+    bool isPreferredRebroadcaster = (config.device.role == meshtastic_Config_DeviceConfig_Role_ROUTER);
     if (mp->which_payload_variant == meshtastic_MeshPacket_decoded_tag &&
         mp->decoded.portnum == meshtastic_PortNum_TELEMETRY_APP && mp->decoded.request_id > 0) {
         LOG_DEBUG("Received telemetry response. Skip sending our NodeInfo");
@@ -187,7 +185,19 @@ void MeshService::handleToRadio(meshtastic_MeshPacket &p)
 #endif
     p.from = 0;                          // We don't let clients assign nodenums to their sent messages
     p.next_hop = NO_NEXT_HOP_PREFERENCE; // We don't let clients assign next_hop to their sent messages
-    p.relay_node = NO_RELAY_NODE;        // We don't let clients assign relay_node to their sent messages
+    // Allow clients to set relay_node for broadcasts (to specify which node should rebroadcast first)
+    // For DMs, use dm_relay_node preference if configured
+    if (p.to == NODENUM_BROADCAST) {
+        // For broadcasts, preserve client-set relay_node if non-zero, otherwise no preference
+        if (p.relay_node == NO_RELAY_NODE) {
+            // Client didn't set one, no preference
+        }
+    } else {
+        // For DMs, use dm_relay_node preference if configured and client didn't set one
+        if (p.relay_node == NO_RELAY_NODE && config.device.dm_relay_node != 0) {
+            p.relay_node = config.device.dm_relay_node;
+        }
+    }
 
     if (p.id == 0)
         p.id = generatePacketId(); // If the phone didn't supply one, then pick one
