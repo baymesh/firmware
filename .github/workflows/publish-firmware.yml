@@ -164,25 +164,12 @@ jobs:
       - name: Create release notes
         run: |
           cd publish
-          cat > release_notes.md << 'EOF'
-          # Baymesh Firmware
+          printf '# Baymesh Firmware\n\n## Features\n\n### MeshControl (Port 78)\nRemote configuration via signed HMAC packets.\n\n### Relay Node\n- Broadcast relay_node: Specify which node rebroadcasts first\n- DM relay_node preference\n\n### Hop Limit\n- HOP_MAX = 64\n\n## Supported Hardware\n\n- RAK WisBlock 4631\n' > release_notes.md
 
-          ## Features
-
-          ### MeshControl (Port 78)
-          Remote configuration via signed HMAC packets.
-
-          ### Relay Node
-          - Broadcast relay_node: Specify which node rebroadcasts first
-          - DM relay_node preference
-
-          ### Hop Limit
-          - HOP_MAX = 64
-
-          ## Supported Hardware
-
-          - RAK WisBlock 4631
-          EOF
+      - name: Create CNAME
+        run: |
+          cd publish
+          echo "firmware.bayme.sh" > CNAME
 
       - name: Publish to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
