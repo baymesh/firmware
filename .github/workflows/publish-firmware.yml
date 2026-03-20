@@ -222,6 +222,24 @@ jobs:
           print(json.dumps(manifest, indent=2))
           PYEOF
 
+      - name: Restructure for web flasher
+        env:
+          VERSION: ${{ needs.version.outputs.long }}
+        run: |
+          cd publish
+          # Create version directory
+          mkdir -p firmware-$VERSION
+          # Move manifest into version directory
+          mv firmware-$VERSION.json firmware-$VERSION/
+          # Move firmware files into version directory
+          for f in *.uf2 *.hex *.zip *.bin; do
+            if [ -f "$f" ]; then
+              mv "$f" firmware-$VERSION/
+            fi
+          done
+          # List contents
+          ls -la firmware-$VERSION/
+
       - name: Create release notes
         run: |
           cd publish
