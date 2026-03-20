@@ -132,7 +132,14 @@ jobs:
           merge-multiple: true
 
       - name: Display artifacts
-        run: ls -la publish/
+        run: |
+          ls -la publish/
+          echo "=== Finding all .mt.json files ==="
+          find publish/ -name "*.mt.json" 2>/dev/null | head -20
+          echo "=== Finding all .uf2 files ==="
+          find publish/ -name "*.uf2" 2>/dev/null | head -20
+          echo "=== Checking publish directory contents ==="
+          ls -R publish/ 2>/dev/null | head -100
 
       - name: Create release manifest
         env:
@@ -145,23 +152,35 @@ jobs:
           import glob
           import datetime
           import re
+          import pathlib
 
           version = os.environ['VERSION']
           targets = []
           
-          for mt in glob.glob('*.mt.json'):
-              # Extract board name: firmware-{board}-{version}.mt.json
-              # Board name can have dashes, version starts with 2.7.
-              base = mt.replace('.mt.json', '')
+          # Search for mt.json files recursively in subdirectories
+          for mt in pathlib.Path('.').rglob('*.mt.json'):
+              mt_str = str(mt)
+              base = mt_str.replace('.mt.json', '')
+              # Remove leading './' if present
+              if base.startswith('./'):
+                  base = base[2:]
+              print(f"Processing: {mt_str} -> base: {base}")
               m = re.match(r'^firmware-(.+)-' + re.escape(version) + r'$', base)
               if m:
                   board = m.group(1)
-                  uf2_files = glob.glob(f'firmware-{board}-{version}.uf2')
-                  if uf2_files:
+                  # Search for uf2 in the same directory as mt.json
+                  uf2_pattern = f'firmware-{board}-{version}.uf2'
+                  uf2_file = mt.parent / uf2_pattern
+                  if uf2_file.exists():
                       targets.append({
                           'board': board,
-                          'firmware': os.path.basename(uf2_files[0])
+                          'firmware': uf2_pattern
                       })
+                      print(f"  Added board: {board}")
+                  else:
+                      print(f"  UF2 not found: {uf2_file}")
+              else:
+                  print(f"  Regex didn't match")
           
           manifest = {
               'version': version,
@@ -172,6 +191,7 @@ jobs:
           with open(f'firmware-{version}.json', 'w') as f:
               json.dump(manifest, f, indent=2)
           
+          print(f"\nFinal manifest: {len(targets)} boards")
           print(json.dumps(manifest, indent=2))
           PYEOF
 
