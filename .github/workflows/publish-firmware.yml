@@ -131,15 +131,21 @@ jobs:
           path: ./publish
           merge-multiple: true
 
-      - name: Display artifacts
+      - name: Flatten artifact directories
         run: |
-          ls -la publish/
-          echo "=== Finding all .mt.json files ==="
-          find publish/ -name "*.mt.json" 2>/dev/null | head -20
-          echo "=== Finding all .uf2 files ==="
-          find publish/ -name "*.uf2" 2>/dev/null | head -20
-          echo "=== Checking publish directory contents ==="
-          ls -R publish/ 2>/dev/null | head -100
+          cd publish
+          echo "=== Before flatten ==="
+          find . -type f 2>/dev/null | head -50
+          # Find all firmware files and copy them to the root
+          for f in $(find . -name "firmware-*.uf2" -o -name "firmware-*.hex" -o -name "firmware-*.zip" -o -name "firmware-*.mt.json" -o -name "firmware-*.elf" 2>/dev/null); do
+            dir=$(dirname "$f")
+            if [ "$dir" != "." ]; then
+              echo "Copying $f to root"
+              cp "$f" . 2>/dev/null || true
+            fi
+          done
+          echo "=== After flatten ==="
+          ls -la *.uf2 *.hex *.zip *.mt.json 2>/dev/null | head -20 || echo "No firmware files found"
 
       - name: Create release manifest
         env:
@@ -152,31 +158,27 @@ jobs:
           import glob
           import datetime
           import re
-          import pathlib
 
           version = os.environ['VERSION']
           targets = []
           
-          # Search for mt.json files recursively in subdirectories
-          for mt in pathlib.Path('.').rglob('*.mt.json'):
-              mt_str = str(mt)
-              base = mt_str.replace('.mt.json', '')
-              # Remove leading './' if present
-              if base.startswith('./'):
-                  base = base[2:]
+          print(f"Looking for firmware files for version {version}")
+          
+          # Search for mt.json files in current directory
+          for mt in glob.glob('firmware-*.mt.json'):
+              base = mt.replace('.mt.json', '')
+              print(f"Processing: {base}")
               
-              # Extract board name from directory name (artifact name)
-              dir_name = os.path.basename(os.path.dirname(mt_str))
-              board_match = re.match(r'^firmware-(.+)-' + re.escape(version) + r'$', dir_name)
-              if board_match:
-                  board = board_match.group(1)
+              # Extract board name from filename
+              m = re.match(r'^firmware-(.+)-' + re.escape(version) + r'$', base)
+              if m:
+                  board = m.group(1)
                   # Try different firmware file types in order of preference
                   firmware_file = None
                   firmware_type = None
                   for ext in ['.uf2', '.hex', '.zip']:
                       pattern = f'firmware-{board}-{version}{ext}'
-                      f = mt.parent / pattern
-                      if f.exists():
+                      if os.path.exists(pattern):
                           firmware_file = pattern
                           firmware_type = ext
                           break
@@ -185,13 +187,13 @@ jobs:
                       targets.append({
                           'board': board,
                           'firmware': firmware_file,
-                          'type': firmware_type[1:]  # Remove the leading dot
+                          'type': firmware_type[1:]
                       })
-                      print(f"Added: {board} ({firmware_type})")
+                      print(f"  Added: {board} ({firmware_type})")
                   else:
-                      print(f"No firmware file found for: {board}")
+                      print(f"  No firmware file found for: {board}")
               else:
-                  print(f"Dir name didn't match: {dir_name}")
+                  print(f"  Pattern didn't match: {base}")
           
           manifest = {
               'version': version,
