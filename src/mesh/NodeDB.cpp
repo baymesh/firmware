@@ -668,7 +668,7 @@ void NodeDB::installDefaultConfig(bool preserveKey = false)
 #ifdef USERPREFS_CONFIG_SMART_POSITION_ENABLED
     config.position.position_broadcast_smart_enabled = USERPREFS_CONFIG_SMART_POSITION_ENABLED;
 #else
-    config.position.position_broadcast_smart_enabled = true;
+    config.position.position_broadcast_smart_enabled = false;
 #endif
     config.position.broadcast_smart_minimum_distance = 100;
     config.position.broadcast_smart_minimum_interval_secs = default_broadcast_smart_minimum_interval_secs;
@@ -790,7 +790,7 @@ void NodeDB::initConfigIntervals()
 #ifdef USERPREFS_CONFIG_POSITION_BROADCAST_INTERVAL
     config.position.position_broadcast_secs = USERPREFS_CONFIG_POSITION_BROADCAST_INTERVAL;
 #else
-    config.position.position_broadcast_secs = default_broadcast_interval_secs;
+    config.position.position_broadcast_secs = 0;
 #endif
 
     config.power.ls_secs = default_ls_secs;

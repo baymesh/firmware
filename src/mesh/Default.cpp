@@ -67,3 +67,8 @@ uint8_t Default::getConfiguredOrDefaultHopLimit(uint8_t configured)
     return (configured >= HOP_MAX) ? HOP_MAX : config.lora.hop_limit;
 #endif
 }
+
+uint8_t Default::getHopLimitNoCap()
+{
+    return config.lora.hop_limit > 0 ? config.lora.hop_limit : HOP_RELIABLE;
+}

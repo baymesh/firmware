@@ -65,6 +65,7 @@ class Default
     // even though internal node counts use uint16_t (max 65535 nodes)
     static uint32_t getConfiguredOrDefaultMsScaled(uint32_t configured, uint32_t defaultValue, uint32_t numOnlineNodes);
     static uint8_t getConfiguredOrDefaultHopLimit(uint8_t configured);
+    static uint8_t getHopLimitNoCap();
     static uint32_t getConfiguredOrMinimumValue(uint32_t configured, uint32_t minValue);
 
   private:

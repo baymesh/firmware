@@ -95,6 +95,7 @@ void NodeInfoModule::sendOurNodeInfo(NodeNum dest, bool wantReplies, uint8_t cha
     DEBUG_HEAP_AFTER("NodeInfoModule::sendOurNodeInfo", p);
 
     if (p) { // Check whether we didn't ignore it
+        p->hop_limit = Default::getHopLimitNoCap();
         p->to = dest;
         bool requestWantResponse = (config.device.role != meshtastic_Config_DeviceConfig_Role_TRACKER &&
                                     config.device.role != meshtastic_Config_DeviceConfig_Role_SENSOR) &&
