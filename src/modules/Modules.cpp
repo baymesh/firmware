@@ -103,6 +103,9 @@
 #if !MESHTASTIC_EXCLUDE_STATUS
 #include "modules/StatusMessageModule.h"
 #endif
+#if !MESHTASTIC_EXCLUDE_MESHCONTROL
+#include "modules/MeshControlModule.h"
+#endif
 
 #if defined(HAS_HARDWARE_WATCHDOG)
 #include "watchdog/watchdogThread.h"
@@ -120,6 +123,9 @@ void setupModules()
     }
 #endif
     statusLEDModule = new StatusLEDModule();
+#if !MESHTASTIC_EXCLUDE_MESHCONTROL
+    meshControlModule = new MeshControlModule();
+#endif
 #if !MESHTASTIC_EXCLUDE_REPLYBOT
     new ReplyBotModule();
 #endif

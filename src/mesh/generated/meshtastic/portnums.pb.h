@@ -147,9 +147,14 @@ typedef enum _meshtastic_PortNum {
  ENCODING: Fragmented RNS Packet. Handled by Meshtastic RNS interface */
     meshtastic_PortNum_RETICULUM_TUNNEL_APP = 76,
     /* App for transporting Cayenne Low Power Payload, popular for LoRaWAN sensor nodes. Offers ability to send
- arbitrary telemetry over meshtastic that is not covered by telemetry.proto
- ENCODING: CayenneLLP */
+  arbitrary telemetry over meshtastic that is not covered by telemetry.proto
+  ENCODING: CayenneLLP */
     meshtastic_PortNum_CAYENNE_APP = 77,
+    /* Mesh Control allows a trusted mesh administrator to broadcast signed configuration
+  updates that participating nodes will automatically apply.
+  Payload is a MeshControlPacket message.
+  ENCODING: Protobuf */
+    meshtastic_PortNum_MESH_CONTROL_APP = 78,
     /* GroupAlarm integration
  Used for transporting GroupAlarm-related messages between Meshtastic nodes
  and companion applications/services. */
