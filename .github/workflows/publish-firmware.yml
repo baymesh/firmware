@@ -90,10 +90,10 @@ jobs:
           mkdir -p release
           if ls $BUILDDIR/firmware-$BOARD-${VERSION}.uf2 2>/dev/null; then
             cp $BUILDDIR/firmware-$BOARD-${VERSION}.uf2 release/
-            cp $BUILDDIR/firmware-$BOARD-${VERSION}.elf release/
-            cp $BUILDDIR/firmware-$BOARD-${VERSION}.hex release/
+            cp $BUILDDIR/firmware-$BOARD-${VERSION}.elf release/ || true
+            cp $BUILDDIR/firmware-$BOARD-${VERSION}.hex release/ || true
             cp $BUILDDIR/firmware-$BOARD-${VERSION}.zip release/ || true
-            cp $BUILDDIR/firmware-$BOARD-${VERSION}.mt.json release/
+            cp $BUILDDIR/firmware-$BOARD-${VERSION}.mt.json release/ || true
           fi
           echo "Built: $(ls release/*.uf2 2>/dev/null || echo 'none')"
 
