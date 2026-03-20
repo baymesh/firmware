@@ -89,10 +89,16 @@ jobs:
           BUILDDIR=.pio/build/$BOARD
           mkdir -p release
           echo "=== Files in build dir ==="
-          ls $BUILDDIR/ 2>/dev/null | head -20 || echo "Build dir not found"
+          ls $BUILDDIR/ 2>/dev/null | head -30 || echo "Build dir not found"
           echo "=== Looking for firmware files ==="
+          # Copy all firmware-related files
           find $BUILDDIR -maxdepth 1 -name "firmware-${BOARD}-${VERSION}.*" -type f 2>/dev/null | while read f; do
             echo "Copying: $f"
+            cp "$f" release/ || true
+          done
+          # Also copy factory.bin for ESP32 boards
+          find $BUILDDIR -maxdepth 1 -name "firmware-${BOARD}-${VERSION}.factory.bin" -type f 2>/dev/null | while read f; do
+            echo "Copying factory bin: $f"
             cp "$f" release/ || true
           done
           echo "=== Release dir ==="
@@ -110,6 +116,7 @@ jobs:
             release/*.hex
             release/*.elf
             release/*.zip
+            release/*.bin
 
   publish:
     runs-on: ubuntu-latest
