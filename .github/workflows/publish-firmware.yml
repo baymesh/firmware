@@ -144,15 +144,18 @@ jobs:
           import os
           import glob
           import datetime
+          import re
 
           version = os.environ['VERSION']
           targets = []
           
           for mt in glob.glob('*.mt.json'):
+              # Extract board name: firmware-{board}-{version}.mt.json
+              # Board name can have dashes, version starts with 2.7.
               base = mt.replace('.mt.json', '')
-              parts = base.split('-')
-              if len(parts) >= 2:
-                  board = parts[1]
+              m = re.match(r'^firmware-(.+)-' + re.escape(version) + r'$', base)
+              if m:
+                  board = m.group(1)
                   uf2_files = glob.glob(f'firmware-{board}-{version}.uf2')
                   if uf2_files:
                       targets.append({
