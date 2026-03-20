@@ -176,11 +176,18 @@ jobs:
                   # Try different firmware file types in order of preference
                   firmware_file = None
                   firmware_type = None
-                  for ext in ['.uf2', '.hex', '.zip']:
+                  for ext in ['.uf2', '.hex', '.zip', '.bin']:
                       pattern = f'firmware-{board}-{version}{ext}'
                       if os.path.exists(pattern):
                           firmware_file = pattern
                           firmware_type = ext
+                          break
+                      
+                      # Also check for factory.bin for ESP32 boards
+                      factory_pattern = f'firmware-{board}-{version}.factory.bin'
+                      if os.path.exists(factory_pattern):
+                          firmware_file = factory_pattern
+                          firmware_type = '.bin'
                           break
                   
                   if firmware_file:
