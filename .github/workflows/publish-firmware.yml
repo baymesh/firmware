@@ -72,8 +72,8 @@ jobs:
           if git diff --cached --quiet; then
             echo "No proto changes to commit"
           else
-            git commit -m "Regenerate protobufs C++ code from baymesh/protobufs"
-            git push
+            git commit -m "Regenerate protobufs C++ code from baymesh/protobufs" || true
+            git push || echo "Push failed (likely another job pushed first)"
           fi
 
       - name: Install PlatformIO
@@ -85,7 +85,13 @@ jobs:
         run: |
           VERSION=${{ needs.version.outputs.long }}
           BOARD=${{ matrix.board }}
-          pio run --environment $BOARD || echo "Build may have failed, continuing..."
+          set +e
+          pio run --environment $BOARD
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "Build failed with exit code $EXIT_CODE"
+          fi
+          set -e
           BUILDDIR=.pio/build/$BOARD
           mkdir -p release
           echo "=== Files in build dir ==="
