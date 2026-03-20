@@ -85,7 +85,7 @@ jobs:
         run: |
           VERSION=${{ needs.version.outputs.long }}
           BOARD=${{ matrix.board }}
-          pio run --environment $BOARD --target mtjson || echo "Build may have failed, continuing..."
+          pio run --environment $BOARD || echo "Build may have failed, continuing..."
           BUILDDIR=.pio/build/$BOARD
           mkdir -p release
           echo "=== Files in build dir ==="
@@ -164,23 +164,34 @@ jobs:
               # Remove leading './' if present
               if base.startswith('./'):
                   base = base[2:]
-              print(f"Processing: {mt_str} -> base: {base}")
-              m = re.match(r'^firmware-(.+)-' + re.escape(version) + r'$', base)
-              if m:
-                  board = m.group(1)
-                  # Search for uf2 in the same directory as mt.json
-                  uf2_pattern = f'firmware-{board}-{version}.uf2'
-                  uf2_file = mt.parent / uf2_pattern
-                  if uf2_file.exists():
+              
+              # Extract board name from directory name (artifact name)
+              dir_name = os.path.basename(os.path.dirname(mt_str))
+              board_match = re.match(r'^firmware-(.+)-' + re.escape(version) + r'$', dir_name)
+              if board_match:
+                  board = board_match.group(1)
+                  # Try different firmware file types in order of preference
+                  firmware_file = None
+                  firmware_type = None
+                  for ext in ['.uf2', '.hex', '.zip']:
+                      pattern = f'firmware-{board}-{version}{ext}'
+                      f = mt.parent / pattern
+                      if f.exists():
+                          firmware_file = pattern
+                          firmware_type = ext
+                          break
+                  
+                  if firmware_file:
                       targets.append({
                           'board': board,
-                          'firmware': uf2_pattern
+                          'firmware': firmware_file,
+                          'type': firmware_type[1:]  # Remove the leading dot
                       })
-                      print(f"  Added board: {board}")
+                      print(f"Added: {board} ({firmware_type})")
                   else:
-                      print(f"  UF2 not found: {uf2_file}")
+                      print(f"No firmware file found for: {board}")
               else:
-                  print(f"  Regex didn't match")
+                  print(f"Dir name didn't match: {dir_name}")
           
           manifest = {
               'version': version,
