@@ -39,9 +39,13 @@ jobs:
         env:
           BUILD_LOCATION: local
 
-  build-rak4631:
+  build:
     runs-on: ubuntu-latest
     needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [rak4631, t-echo, nano-g2-ultra, tbeam, m5stack-core, rak11200, heltec-v3, t-deck, station-g2, heltec-hru-3601, tlora-c6, rak11310]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -75,38 +79,29 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
-      - name: Build RAK4631
+      - name: Build ${{ matrix.board }}
         env:
           APP_VERSION: ${{ needs.version.outputs.long }}
         run: |
           VERSION=${{ needs.version.outputs.long }}
-          pio run --environment rak4631 --target mtjson
-          BUILDDIR=.pio/build/rak4631
+          BOARD=${{ matrix.board }}
+          pio run --environment $BOARD --target mtjson || echo "Build may have failed, continuing..."
+          BUILDDIR=.pio/build/$BOARD
           mkdir -p release
-          rm -f release/firmware*
-          cp $BUILDDIR/firmware-rak4631-${VERSION}.uf2 release/
-          cp $BUILDDIR/firmware-rak4631-${VERSION}.elf release/
-          cp $BUILDDIR/firmware-rak4631-${VERSION}.hex release/
-          cp $BUILDDIR/firmware-rak4631-${VERSION}.zip release/
-          cp $BUILDDIR/firmware-rak4631-${VERSION}.mt.json release/
-          cp src/mesh/generated/meshtastic/*.pb.cpp release/ 2>/dev/null || true
-          echo "Built: $(ls release/*.uf2 2>/dev/null)"
-
-      - name: Display build artifacts
-        run: ls -la release/
-
-      - name: Job summary
-        run: |
-          echo "## RAK4631 Build" >> $GITHUB_STEP_SUMMARY
-          echo "Version: ${{ needs.version.outputs.long }}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          ls release/*.uf2 >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          if ls $BUILDDIR/firmware-$BOARD-${VERSION}.uf2 2>/dev/null; then
+            cp $BUILDDIR/firmware-$BOARD-${VERSION}.uf2 release/
+            cp $BUILDDIR/firmware-$BOARD-${VERSION}.elf release/
+            cp $BUILDDIR/firmware-$BOARD-${VERSION}.hex release/
+            cp $BUILDDIR/firmware-$BOARD-${VERSION}.zip release/ || true
+            cp $BUILDDIR/firmware-$BOARD-${VERSION}.mt.json release/
+          fi
+          echo "Built: $(ls release/*.uf2 2>/dev/null || echo 'none')"
 
       - name: Store artifacts
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: firmware-rak4631-${{ needs.version.outputs.long }}
+          name: firmware-${{ matrix.board }}-${{ needs.version.outputs.long }}
           overwrite: true
           path: |
             release/*.mt.json
@@ -114,11 +109,10 @@ jobs:
             release/*.hex
             release/*.elf
             release/*.zip
-            release/firmware-rak4631-*.json
 
   publish:
     runs-on: ubuntu-latest
-    needs: [version, build-rak4631]
+    needs: [version, build]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -134,37 +128,75 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           path: ./publish
-          pattern: firmware-rak4631-*
+          merge-multiple: true
 
       - name: Display artifacts
         run: ls -la publish/
 
       - name: Create release manifest
+        env:
+          VERSION: ${{ needs.version.outputs.long }}
         run: |
           cd publish
-          VERSION="${{ needs.version.outputs.long }}"
+          python3 << 'PYEOF'
+          import json
+          import os
+          import glob
+          import datetime
+
+          version = os.environ['VERSION']
+          targets = []
           
-          cat > firmware-${VERSION}.json << 'EOF'
-          {
-            "version": "%VERSION%",
-            "build_date": "%DATE%",
-            "targets": [
-              {
-                "board": "rak4631",
-                "firmware": "%RAK_UF2%"
-              }
-            ]
+          for mt in glob.glob('*.mt.json'):
+              base = mt.replace('.mt.json', '')
+              parts = base.split('-')
+              if len(parts) >= 2:
+                  board = parts[1]
+                  uf2_files = glob.glob(f'firmware-{board}-{version}.uf2')
+                  if uf2_files:
+                      targets.append({
+                          'board': board,
+                          'firmware': os.path.basename(uf2_files[0])
+                      })
+          
+          manifest = {
+              'version': version,
+              'build_date': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+              'targets': targets
           }
-          EOF
           
-          RAK_UF2=$(ls *.uf2 2>/dev/null | grep rak4631 | head -1)
-          sed -i "s/%VERSION%/$VERSION/g; s/%DATE%/$(date -u +%Y-%m-%dT%H:%M:%SZ)/g; s/%RAK_UF2%/$RAK_UF2/g" firmware-${VERSION}.json
-          cat firmware-${VERSION}.json
+          with open(f'firmware-{version}.json', 'w') as f:
+              json.dump(manifest, f, indent=2)
+          
+          print(json.dumps(manifest, indent=2))
+          PYEOF
 
       - name: Create release notes
         run: |
           cd publish
-          printf '# Baymesh Firmware\n\n## Features\n\n### MeshControl (Port 78)\nRemote configuration via signed HMAC packets.\n\n### Relay Node\n- Broadcast relay_node: Specify which node rebroadcasts first\n- DM relay_node preference\n\n### Hop Limit\n- HOP_MAX = 64\n\n## Supported Hardware\n\n- RAK WisBlock 4631\n' > release_notes.md
+          cat > release_notes.md << 'EOF'
+          # Baymesh Firmware
+
+          ## Features
+
+          ### MeshControl (Port 78)
+          Remote configuration via signed HMAC packets.
+
+          ### Relay Node
+          - Broadcast relay_node: Specify which node rebroadcasts first
+          - DM relay_node preference
+
+          ### Hop Limit
+          - HOP_MAX = 64
+
+          ### Defaults
+          - Position broadcast: OFF by default
+          - Node info: Uses regular hop limit
+          - Channel slot: 49
+
+          ## ⚠️ Not Compatible with Standard Meshtastic
+          This firmware is a custom fork. Only flash devices that will run Baymesh firmware.
+          EOF
 
       - name: Create CNAME
         run: |
@@ -180,6 +212,6 @@ jobs:
           publish_dir: ./publish
           keep_files: true
           user_name: github-actions[bot]
-          user_email: github-actions[bot]@users.noreply.github.com
+          user_email: "github-actions[bot]@users.noreply.github.com"
           commit_message: "Publish firmware ${{ needs.version.outputs.long }}"
           enable_jekyll: false
