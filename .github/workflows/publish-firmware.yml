@@ -137,7 +137,7 @@ jobs:
           echo "=== Before flatten ==="
           find . -type f 2>/dev/null | head -50
           # Find all firmware files and copy them to the root
-          for f in $(find . -name "firmware-*.uf2" -o -name "firmware-*.hex" -o -name "firmware-*.zip" -o -name "firmware-*.mt.json" -o -name "firmware-*.elf" 2>/dev/null); do
+          for f in $(find . -name "firmware-*.uf2" -o -name "firmware-*.hex" -o -name "firmware-*.zip" -o -name "firmware-*.mt.json" -o -name "firmware-*.elf" -o -name "firmware-*.bin" 2>/dev/null); do
             dir=$(dirname "$f")
             if [ "$dir" != "." ]; then
               echo "Copying $f to root"
@@ -145,7 +145,7 @@ jobs:
             fi
           done
           echo "=== After flatten ==="
-          ls -la *.uf2 *.hex *.zip *.mt.json 2>/dev/null | head -20 || echo "No firmware files found"
+          ls -la *.uf2 *.hex *.zip *.bin *.mt.json 2>/dev/null | head -20 || echo "No firmware files found"
 
       - name: Create release manifest
         env:
